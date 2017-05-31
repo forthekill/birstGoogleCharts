@@ -1,0 +1,562 @@
+<html>
+  <head>
+    <style>
+      body {
+        font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+        height: 100%;
+        width: 100%;
+        overflow: hidden;
+      }
+
+      #chartDiv {
+        width: 100%;
+        height: 100%;
+      }
+
+      .container {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        -moz-transform: translateX(-50%) translateY(-50%);
+        -webkit-transform: translateX(-50%) translateY(-50%);
+        transform: translateX(-50%) translateY(-50%);
+      }
+
+    </style>
+
+    <!-- D3 Javascript Library -->
+    <!--<script type="text/javascript" src="https://d3js.org/d3.v3.min.js"></script>-->
+    <!-- Google Charts Javascript Library -->
+    <script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
+    <!-- JQuery Javascript Library -->
+    <script type="text/javascript" src="https://code.jquery.com/jquery-3.2.1.min.js"></script>
+    <!-- Birst Javascript Library -->
+    <script type="text/javascript" src="https://sde.birst.com/js/birst_embed.js"></script>
+  </head>
+  <body>
+    <div class="container">
+      <div id="chartDiv"></div>
+    </div>
+
+    <!-- BIRST FUNCTIONS -->
+    <script>
+      /* BIRST FUNCTIONS - NO MODIFICATION NEEDED */
+
+      /* FUNCTIONS */
+
+      // FUNCTION: escapeParam
+      // Replace single quotes in a string
+      function escapeParam(str) {
+          str = str.replace(/'/g, "\\'");
+          return str;
+      }
+
+      // FUNCTION: indexOf
+      // Lookup a particular object key in an array of objects
+      var indexOf = function(key, array) {
+          for (var i = 0; i < array.length; i++) {
+              if (key === array[i].key) {
+                  return i; // returns index of matching object
+              }
+          }
+          return -1; // no match found
+      };
+
+      // FUNCTION: textBetween
+      // Returns the text from a string between the specified start and end characters
+      var textBetween = function (textString, startChar, endChar){
+        var startPos = textString.indexOf(startChar) + 1;
+        var endPos = textString.indexOf(endChar,startPos);
+        return textString.substring(startPos,endPos);
+      };
+
+      // FUNCTION: getName
+      // Returns the plain text name of either a measure, dimension, or saved expression
+      var getName = function (nameString){
+
+        if (nameString.indexOf("Saved") >= 0){
+          // it's a saved expression
+          // get text between ' and '
+          return textBetween(nameString,"'","'");
+        }else{
+          // it's a dimension or measures
+          if (nameString.indexOf(":") >= 0){
+            // it's a measure
+            // check for second :
+            var firstPos = nameString.indexOf(":");
+            var secondPos = nameString.indexOf(":",firstPos + 1);
+            if (secondPos >= 0){
+              // second :
+              return textBetween(nameString.substr(firstPos + 1),":","]");
+            }
+            // get text between : and ]
+            return textBetween(nameString,":","]");
+          }else{
+            // it's a dimension
+            // get text between . and ]
+            return textBetween(nameString,".","]");
+          }
+        }
+
+      };
+
+      // FUNCTION: prepareFilters
+      // Validates and prepares the filter state
+      var prepareFilters = function(state, apply) {
+
+          if (apply == null) {
+              console.debug("apply is null. All filters valid.");
+              return state;
+          }
+
+          // apply is empty
+          if (apply.length == 0) {
+              console.debug("apply is empty. All filters valid.");
+              return state;
+          }
+
+          var idx = indexOf("filters", apply)
+          if (idx >= 0) {
+              var value = apply[idx].value;
+              console.debug("value:" + value);
+          }
+
+          switch (value) {
+              case "ALL":
+                  console.log("apply is ALL. All filters valid.");
+                  return state;
+                  break;
+
+              case "NONE":
+                  console.debug("apply is NONE. No filters valid.");
+                  state.length = 0;
+                  return state;
+                  break;
+
+              case "VALID":
+                  for (var f = 0; f < state.length; f++) {
+
+                      console.debug("STATE[" + f + "]");
+                      console.debug(state[f]);
+                      console.debug(state[f].key);
+
+                      var test = indexOf(state[f].key, apply);
+                      console.debug("test: " + test);
+
+                      if (test < 0) {
+                          // remove filter from state
+                          state.splice(f, 1);
+                          console.debug("Filter not listed as VALID. Removed.");
+                      }
+                  }
+                  return state;
+                  break;
+
+              case "INVALID":
+                  for (var f = 0; f < state.length; f++) {
+
+                      console.debug(state[f]);
+                      console.debug(state[f].key);
+
+                      var test = indexOf(state[f].key, apply);
+
+                      if (test >= 0) {
+                          // remove filter from state
+                          state.splice(f, 1);
+                          console.debug("Filter listed as INVALID. Removed.");
+                      }
+                  }
+                  return state;
+                  break;
+
+              default:
+                  // apply is misconfigured, then ALL assumed
+                  console.debug("apply was misconfigured, leaving filter state as is");
+                  return state;
+          }
+
+      };
+
+      // FUNCTION: addDefaultFilters
+      // Adds default filters to the filter state
+      var addDefaultFilters = function(state, defaults) {
+
+          for (var d = 0; d < defaults.length; d++) {
+
+              var filt = defaults[d];
+
+              // If filter does NOT exist in the current filter state
+              if (indexOf(filt.key, state) < 0) {
+                  // Add filter to state
+                  console.debug("F" + d + ": Default filter not present. Add to filter state.")
+                  state.push(filt);
+              } else {
+                  console.debug("F" + d + ": Default filter already exists. Ignore default filter.")
+              }
+          }
+          return state;
+      };
+
+      // FUNCTION: createWhere
+      // Creates WHERE clause based on filter state
+      var createWhere = function(state) {
+
+          var clause = "";
+
+          // Check to see if there are current filters
+          if (state.length != 0) {
+              clause += " WHERE ("; // Start WHERE
+
+              // Get the filters from the filter state array and append them to the base query
+              for (var i = 0; i < state.length; i++) {
+
+                  var filter = state[i];
+
+                  // Split multiple filter values into an array of filter values
+                  var values = String(filter.value).split(",");
+
+                  // IF NOT the first or only param, add an AND
+                  if (i != 0) {
+                      clause += " AND ";
+                  }
+
+                  // Start Filter
+                  clause += "(";
+
+                  // Loop through filter value array and append filter params to the query
+                  for (var q = 0; q < values.length; q++) {
+
+                      // For each filter value, set the key and the value
+                      if (q === values.length - 1) {
+                          // Single or final filter value
+                          clause += "[" + filter.key + "]" + filter.operator + "'" + escapeParam(values[q]) + "'";
+                      } else {
+                          // OR for multiple filter values
+                          clause += "[" + filter.key + "]" + filter.operator + "'" + escapeParam(values[q]) + "' OR ";
+                      }
+
+                  }
+
+                  // Close Filter
+                  clause += ")";
+              }
+
+              // Close WHERE
+              clause += ")";
+
+              console.log("Clause: " + clause);
+
+          } else {
+              console.debug("Filter state empty. No clause created.")
+          }
+
+          // Return the finalized WHERE clause
+          return clause;
+      };
+
+      // FUNCTION: runQuery
+      // Sets filters, creates and runs the query
+      var runQuery = function() {
+          console.log("runQuery");
+
+          // Test for applyFilters definition, if missing, define
+          if (!("applyFilters" in window) || (typeof applyFilters == "undefined")) {
+              var applyFilters = [];
+          }
+
+          // Test for defaultFilters definition, if missing, define
+          if (!("defaultFilters" in window) || (typeof defaultFilters == "undefined")) {
+              var defaultFilters = [];
+          }
+
+          // Prepare filter state for WHERE clause construction
+          var state = prepareFilters(filterState, applyFilters);
+          state = addDefaultFilters(state, defaultFilters);
+
+          // Create WHERE clause
+          var clause = createWhere(state);
+
+          // Append final query params
+          var query = bql + clause + bqlSuffix;
+
+          // Verify the final query
+          console.log(query);
+
+          // Execute the query
+          BirstConfig.getData(query);
+
+      };
+
+	  </script>
+
+    <!-- QUERY DEFINITION SCRIPT -->
+	  <script>
+  		/* QUERY DEFINITION - MODIFICATION NEEDED */
+
+  		// MODIFICATION NEEDED
+      // Set the value of the measure to the appropriate Birst measure name
+      //var measure = "[Date: Sum: Amount]";
+      var measure = "SavedExpression('Closed Won')";
+
+      // MODIFICATION NEEDED
+      // Set the value to the appropriate Birst dimension name
+      var titleDimension = "[Manager.Channel Name]";
+
+      // MODIFICATION NEEDED
+      // Set the sort dimension
+  		var sortDimension = "";
+
+      // Default query
+      if (sortDimension != ""){
+        var bql = "SELECT USING OUTER JOIN " + measure + " 'COL0' , " + titleDimension + " 'COL1' , " + sortDimension + " 'COL2' FROM [ALL]";
+      }else{
+        var bql = "SELECT USING OUTER JOIN " + measure + " 'COL0' , " + titleDimension + " 'COL1' FROM [ALL]";
+      }
+
+  		// MODIFICATION NEEDED
+  		// Query suffix
+  		// Set appropriate suffix
+  	  var bqlSuffix = " ORDER BY [Manager.Channel ID] ASC"; // Don't forget the leading space
+  		//var bqlSuffix = ""; // For no suffix
+
+      /* FILTER DEFINITION */
+
+      var filterState = []; // Create a filter state array
+
+      // MODIFICATION NEEDED
+      // Set the valid filters that can be applied
+      //var applyFilters = []; // All filters are valid
+      //var applyFilters = [{"key":"filters","value":"ALL"}]; // All filters are valid
+      var applyFilters = [{"key":"filters","value":"VALID"},{"key":"Manager.Channel Name"}]; // Listed filters are valid
+      //var applyFilters = [{"key":"filters","value":"INVALID"},{"key":"Manager.Channel Name"}]; // Listed filters are NOT valid
+      //var applyFilters = [{"key":"filters","value":"NONE"}]; // No filters are valid
+
+      // MODIFICATION NEEDED
+      // Default filters (for initial WHERE clause)
+      var defaultFilters = [];
+      //var defaultFilters = [{"key":"Manager.Channel","operator":"=","value":["Direct"]}];
+      //var defaultFilters = [{"key":"Manager.Channel","operator":"<>","value":["Direct","Partner"]}];
+      //var defaultFilters = [{"key":"Manager.Channel","operator":"=","value":["Direct"]},{"key":"Manager.Territory","operator":"=","value":["East"]}];
+    </script>
+
+    <!-- CHART SCRIPT -->
+    <script>
+      /* CHART SPECIFIC SCRIPT - MODIFICATION NEEDED TO MATCH CHART TYPE */
+
+      // VARIABLE DEFINITIONS
+
+      // GOOGLE CHARTS ONLY
+      var chartObj; // Google Chart object
+
+      // Set the Google Chart options
+  		// console.log("Set google chart options");
+  		var options = {
+  		    pieHole: 0.5,
+  		    pieSliceText: 'label',
+  		    colors: ['#A7D28A','#92C76F','#629042','#FEBA31'],
+  		    legend:'none',
+  		    width: window.innerWidth - 1,
+  		    height: window.innerHeight - 1,
+  		    chartArea: {width: window.innerWidth - 1, height: window.innerHeight - 1}
+  		};
+
+      // FUNCTION DEFINITIONS
+      // IMPORTANT!! translateData AND drawChart FUNCTIONS WILL BE DIFFERENT FOR EACH CHART
+
+      // FUNCTION: translateData
+      // Data conversion function, BQL to Google Donut chart format
+      var translateData = function(bqlResult) {
+
+        /// Google Donut format
+        // First element are titles, then each element is dimension value and measure value pairs
+        // ex. [['Channel', 'Closed Won'],['Direct', 20],['Overlay', 7.4],['Partner', 4.2],['VAR', 3.1]];
+
+        // Define array for chart data
+        var dataArray = [];
+        var element = [];
+
+        // Create title element dynamically
+        element = [getName(titleDimension), getName(measure)];
+
+        // Add title element to data array
+        dataArray.push(element);
+
+        // Loop through BQL results to translate each row
+        for (var i = 0, len = bqlResult.length; i < len; i++) {
+
+            var row = bqlResult[i];
+
+            // MODIFICATION NEEDED
+            // BQL Results must be pulled from the array and populated to the proper variables
+            var dim = row[1];
+            var val = row[0];
+
+            // Create element
+            element = [dim, val];
+
+            // Add element to data array
+            dataArray.push(element);
+
+        }
+
+        // Debugging
+        console.log("dataArray:");
+        console.log(dataArray);
+
+        // Return properly formatted data
+        return google.visualization.arrayToDataTable(dataArray);
+
+      };
+
+
+      // FUNCTION: drawChart
+      // Call to draw the chart
+      var drawChart = function(){
+
+        // This allows you to do filtering or drill across
+        var selectHandler = function(){
+
+  				var selection = chartObj.getSelection();
+  				var message = "";
+
+  				for (var i = 0; i < selection.length; i++) {
+
+  				    var item = selection[i];
+
+  				    if (item.row != null && item.column != null) {
+
+  				      	var str = chartData.getFormattedValue(item.row, item.column);
+  				      	message += '{row:' + item.row + ',column:' + item.column + '} = ' + str + '\n';
+
+  				    } else if (item.row != null) {
+
+  				      	var str = chartData.getFormattedValue(item.row, 0);
+  				    	message += '{row:' + item.row + ', column:none}; value (col 0) = ' + str + '\n';
+
+  				    } else if (item.column != null) {
+
+  				      	var str = chartData.getFormattedValue(0, item.column);
+  				    	message += '{row:none, column:' + item.column + '}; value (row 0) = ' + str + '\n';
+
+  					}
+  				}
+
+  				if (message == "") {
+  					message = "nothing";
+  				}
+
+          // Do ifs or case statement to set drill across or filter
+  				if (str == "Direct"){
+            // URL for drill across
+  					window.parent.location = "";
+  				}
+
+          // TODO Add filtering on Partner value as an example
+
+  			};
+
+        console.log("drawChart");
+
+  	  	// Set height and width
+  	  	options.width = window.innerWidth - 1;
+  	  	options.height = window.innerHeight - 1;
+
+  			// Add our selection handler.
+  			google.visualization.events.addListener(chartObj, 'select', selectHandler);
+
+  		  var formatter = new google.visualization.NumberFormat({prefix: '$', pattern: 'short', fractionDigits: 1});
+  		  formatter.format(chartData,1);
+
+  		  // Draw chart
+  		  chartObj.draw(chartData, options);
+
+      };
+
+    </script>
+
+    <!-- EXECUTE SCRIPT -->
+    <script>
+      /* MAIN EXECUTE SCRIPT - NO MODIFICATION NEEDED */
+
+      /* VARIABLES */
+
+      // Get default window dimensions
+      var winWidth = $("body").width();
+      var winHeight = $("body").height();
+
+      // Wait time for redraw
+      var wait;
+
+      // For passing data in expected chart format
+      var chartData;
+
+      // FUNCTION: eventHandler
+      // Birst Event Handler
+      var birstEventHandler = function(e) {
+
+          // Birst Filter operation
+          if (e.data.operation === "setFilters") {
+              console.log("setFilters");
+
+              filterState = e.data.filters;
+
+              runQuery();
+          }
+
+          // Birst Query operation
+          if (e.data.operation === "executeQueryResult") {
+
+              console.log("executeQuery");
+
+              // Get results of BQL query
+              var bqlData = e.data.result.rows;
+
+              // Call the result function to translate BQL query to chart format
+              chartData = translateData(bqlData);
+
+              // Draw chart
+              drawChart();
+
+          }
+      };
+
+      // FUNCTION: mainCallBack
+      // Main callback function
+      var mainCallBack = function() {
+          console.log("mainCallBack");
+
+          // Create chart object
+          chartObj = new google.visualization.PieChart(document.getElementById('chartDiv'));
+
+          // Birst event handler declaration
+          BirstConfig.callBack(birstEventHandler);
+
+          // Run the Birst query
+          runQuery();
+      };
+
+      // DOCUMENT READY
+      $(document).ready(function() {
+        console.log( "Document loaded." );
+
+        // Load Google Charts
+        google.charts.load("45", {packages:["corechart"]});
+
+        // Set Google callback
+        console.log("Set callback");
+  			google.charts.setOnLoadCallback(mainCallBack);
+
+      });
+
+      // FUNCTION ON RESIZE
+      // Checks for window resize and calls the draw code
+      $(window).resize(function(){
+
+        drawChart();
+
+      });
+
+  	</script>
+
+  </body>
+</html>
