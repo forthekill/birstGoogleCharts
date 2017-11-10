@@ -24,6 +24,8 @@
 
     </style>
 
+    <link href="https://fonts.googleapis.com/css?family=Roboto" rel="stylesheet">
+
     <!-- D3 Javascript Library -->
     <!--<script type="text/javascript" src="https://d3js.org/d3.v3.min.js"></script>-->
     <!-- Google Charts Javascript Library -->
@@ -44,24 +46,24 @@
 
   		// MODIFICATION NEEDED
       // Set the value of the measure to the appropriate Birst measure name
-      //var measure = "[Date: Sum: Amount]";
-      var measure = "SavedExpression('Closed Won')";
+      var measure = "[Close Date: Sum: Amount]";
 
       // MODIFICATION NEEDED
       // Set the value to the appropriate Birst dimension name
-      var titleDimension = "[Opportunities.Opp Name]";
+      var dimension01 = "[Manager.Channel Name]";
+      var dimension02 = "[Location.Territory Name]";
 
       // MODIFICATION NEEDED
       // Set the sort dimension
-  		var sortDimension = "[Opportunities.Opp ID]";
+  		var sortDimension = "";
       //var sortDimension = "";
       var sortOrder = "ASC";
 
       // Default query
       if (sortDimension != ""){
-        var bql = "SELECT USING OUTER JOIN " + measure + " 'COL0' , " + titleDimension + " 'COL1' , " + sortDimension + " 'COL2' FROM [ALL]";
+        var bql = "SELECT USING OUTER JOIN " + measure + " 'COL0' , " + dimension01 + " 'COL1' , " + dimension02 + " 'COL2' , " + sortDimension + " 'COL3' FROM [ALL]";
       }else{
-        var bql = "SELECT USING OUTER JOIN " + measure + " 'COL0' , " + titleDimension + " 'COL1' FROM [ALL]";
+        var bql = "SELECT USING OUTER JOIN " + measure + " 'COL0' , " + dimension01 + " 'COL1' , " + dimension02 + " 'COL2' FROM [ALL]";
       }
 
       // MODIFICATION NEEDED
@@ -79,17 +81,17 @@
 
       // MODIFICATION NEEDED
       // Set the valid filters that can be applied
-      //var applyFilters = []; // All filters are valid
+      var applyFilters = []; // All filters are valid
       //var applyFilters = [{"key":"filters","value":"ALL"}]; // All filters are valid
-      var applyFilters = [{"key":"filters","value":"VALID"},{"key":"Opportunities.Stage"},{"key":"Manager.Channel Name"}]; // Listed filters are valid
+      //var applyFilters = [{"key":"filters","value":"VALID"},{"key":"Opportunities.Stage"},{"key":"Manager.Channel Name"}]; // Listed filters are valid
       //var applyFilters = [{"key":"filters","value":"INVALID"},{"key":"Manager.Channel Name"}]; // Listed filters are NOT valid
       //var applyFilters = [{"key":"filters","value":"NONE"}]; // No filters are valid
 
       // MODIFICATION NEEDED
       // Default filters (for initial WHERE clause)
-      //var defaultFilters = [];
-      var defaultFilters = [{"key":"Opportunities.Stage","operator":"=","value":["Closed Won"]}];
-      //var defaultFilters = [{"key":"Manager.Channel","operator":"<>","value":["Direct","Partner"]}];
+      var defaultFilters = [];
+      //var defaultFilters = [{"key":"Opportunities.Stage","operator":"=","value":["Closed Won"]}];
+      //var defaultFilters = [{"key":"sony_sne_underscores.Category","operator":"<>","value":[""]}];
       //var defaultFilters = [{"key":"Manager.Channel","operator":"=","value":["Direct"]},{"key":"Manager.Territory","operator":"=","value":["East"]}];
     </script>
 
@@ -356,24 +358,53 @@
 
       // Set the Google Chart options
   		// console.log("Set google chart options");
-  		var options = {
-          title: "Histogram",
-  		    colors: ["#A7D28A"],
-  		    legend:"none",
-          //histogram: {bucketsize: 1000}, // Hardcode bucket size
-          histogram: {
-            maxNumBuckets: 20, // Maximum number of buckets
-            minValue: 0 // Min value of chart
-            //lastBucketPercentile: 5, // Ingnores specified percentage of values at top and bottom for bucket size calculation
-            //maxValue: 10000, // Max value of chart
-            //bucketsize: 1000 // Hardcode bucket size
+      var options = {
+        sankey: {
+          node: {
+            label: {
+              fontName: "Roboto",
+              fontSize: 12,
+              color: "#333333",
+              bold: true,
+              italic: false
+            },
+            colorMode: "unique",
+            interactivity: true, // Allows you to select nodes.
+            labelPadding: 6,     // Horizontal distance between the label and the node.
+            nodePadding: 10,     // Vertical distance between nodes.
+            width: 10,            // Thickness of the node.
+            colors: [
+              "#C65F5F",         // Custom color palette for sankey nodes.
+              "#94C871",         // Nodes will cycle through this palette
+              "#54A1D3",         // giving each node its own color.
+              "#333333"
+            ]
           },
-          bar: {gap: 1}, // Spacing between bars
-  		    width: window.innerWidth,
-  		    height: window.innerHeight,
-  		    chartArea: {width: window.innerWidth * 0.90, height: window.innerHeight * 0.85},
-          hAxis: {format: 'short'}
-  		};
+          link: {
+            color: {
+              fill: '#AAAAAA',     // Color of the link.
+              fillOpacity: 0.75, // Transparency of the link.
+              stroke: "#AAAAAA",  // Color of the link border.
+              strokeWidth: 0    // Thickness of the link border (default 0).
+            }
+          },
+          iterations: 0
+        },
+        tooltip: {
+          isHtml: false,
+          /*trigger: "none"*/
+          textStyle: {
+            color: "#444444",
+            fontName: "Roboto",
+            fontSize: 12,
+            bold: false,
+            italic: false
+          }
+        },
+        width: window.innerWidth,
+        height: window.innerHeight
+
+      };
 
       // FUNCTION DEFINITIONS
       // IMPORTANT!! translateData AND drawChart FUNCTIONS WILL BE DIFFERENT FOR EACH CHART
@@ -391,7 +422,7 @@
         var element = [];
 
         // Create title element dynamically
-        element = [getName(titleDimension), getName(measure)];
+        element = [getName(dimension01), getName(dimension02), getName(measure)];
 
         // Add title element to data array
         dataArray.push(element);
@@ -403,11 +434,15 @@
 
             // MODIFICATION NEEDED
             // BQL Results must be pulled from the array and populated to the proper variables
+            console.log("row1: " + row[1]);
+            console.log("row2: " + row[2]);
+            console.log("row0: " + row[0]);
             var dim = row[1];
+            var dim2 = row[2];
             var val = row[0];
 
             // Create element
-            element = [dim, val];
+            element = [dim, dim2, val];
 
             // Add element to data array
             dataArray.push(element);
@@ -419,11 +454,7 @@
         console.log(dataArray);
 
         // Return properly formatted data
-        console.log("dataTable:");
-        console.log(google.visualization.arrayToDataTable(dataArray));
-
-        // Return properly formatted data
-        return google.visualization.arrayToDataTable(dataArray);
+        return google.visualization.arrayToDataTable(dataArray, false);
 
       };
 
@@ -492,11 +523,14 @@
         options.chartArea = {width: window.innerWidth * 0.90, height: window.innerHeight * 0.85};
 
   			// Add our selection handler.
-  			google.visualization.events.addListener(chartObj, 'select', selectHandler);
+  			//google.visualization.events.addListener(chartObj, 'select', selectHandler);
 
         // Formats how data looks in the chart
-  		  var formatter = new google.visualization.NumberFormat({prefix: '$', pattern: 'short', fractionDigits: 1});
-  		  formatter.format(chartData,1);
+        var formatter = new google.visualization.NumberFormat({prefix: '$', pattern: 'short', fractionDigits: 1});
+  		  formatter.format(chartData,2);
+
+        console.log("chartData format");
+        console.log(chartData);
 
         clearTimeout(wait);
   		  // Draw chart
@@ -558,7 +592,7 @@
           console.log("mainCallBack");
 
           // Create chart object
-          chartObj = new google.visualization.Histogram(document.getElementById('chartDiv'));
+          chartObj = new google.visualization.Sankey(document.getElementById('chartDiv'));
 
           // Birst event handler declaration
           BirstConfig.callBack(birstEventHandler);
@@ -573,7 +607,7 @@
         console.log( "Document loaded." );
 
         // Load Google Charts
-        google.charts.load("45", {packages:["corechart"]});
+        google.charts.load('current', {'packages':['sankey']});
 
         // Set Google callback
         console.log("Set callback");
